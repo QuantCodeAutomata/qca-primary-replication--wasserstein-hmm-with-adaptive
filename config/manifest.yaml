@@ -1,0 +1,74 @@
+# =========================================================
+# Experiment Manifest — Wasserstein HMM Portfolio Replication
+# =========================================================
+# All hyperparameters and design choices are documented here.
+# Changing any value here changes it everywhere in the pipeline.
+
+# --- Ticker Mapping ---
+# Paper specifies asset-class proxies, not exact tickers.
+# Final mapping is logged here for reproducibility.
+tickers:
+  SPX:  "SPY"   # S&P 500 ETF (Vanguard/SPDR)
+  BOND: "TLT"   # iShares 20+ Year Treasury Bond ETF
+  GOLD: "GLD"   # SPDR Gold Shares
+  OIL:  "USO"   # United States Oil Fund
+  USD:  "UUP"   # Invesco DB US Dollar Index Bullish Fund
+
+# --- Data Parameters ---
+data:
+  start_date: "2005-01-01"
+  end_date:   "2026-01-31"
+  roll_vol_window:  60    # 60-day rolling volatility
+  roll_mean_window: 20    # 20-day rolling momentum
+
+# --- Train/Test Split ---
+# Paper suggests OOS begins around May 2023
+split:
+  train_end: "2023-05-01"   # t_0; OOS starts day after
+
+# --- HMM Parameters ---
+hmm:
+  k_min:              2       # Minimum candidate state count
+  k_max:              8       # Maximum candidate state count
+  val_slice_length:   60      # Validation slice length for order selection
+  order_select_freq:  5       # Reselect order every 5 trading days (weekly)
+  complexity_penalty: 0.5     # Linear penalty coefficient: penalized_score = PredLL - 0.5*K
+  n_iter:             10      # Max EM iterations (10 is sufficient; EM converges fast on
+                              # financial features — reduced from 30 for feasibility)
+  tol:                1e-3    # EM convergence tolerance
+  random_state:       42      # Random seed
+  min_covar:          1e-4    # Minimum covariance diagonal (regularization)
+  # Compute optimisation: cap the rolling history fed to each HMM fit.
+  # The paper specifies "expanding window" but fitting on the full 4 000+
+  # observation history is O(T) per step and makes all-day runs infeasible
+  # on a single CPU.  1 000 trading days (~4 years) captures all major
+  # regime changes while bounding per-fit cost at ~0.2 s.
+  max_train_size:     1000    # Roll the HMM window; 0 = true expanding window
+
+# --- Template Tracking ---
+templates:
+  n_templates:  6       # G = 6 persistent templates (one expected dormant)
+  eta:          0.05    # Exponential smoothing rate for template updates
+  # Initialization rule: fit initial HMM on training data, use its components
+
+# --- MVO Parameters ---
+mvo:
+  gamma:  1.0    # Risk aversion coefficient
+  tau:    0.01   # Transaction cost (L1 turnover penalty coefficient)
+  w_max:  0.6    # Maximum weight per asset (60%)
+
+# --- KNN Parameters ---
+knn:
+  k_neighbors:  30       # Number of nearest neighbors
+  metric:       "euclidean"  # Distance metric
+  scaling:      "z-score"    # z-score normalization using training-history moments
+  shrinkage:    "ledoit-wolf" # Covariance shrinkage method
+
+# --- Benchmark Conventions ---
+benchmarks:
+  equal_weight_type: "constant_mix"  # Rebalanced daily to 1/N each asset
+  spx_proxy: "SPY"  # Same as tickers.SPX
+
+# --- Evaluation ---
+eval:
+  annualization: 252  # Trading days per year for Sharpe/Sortino
